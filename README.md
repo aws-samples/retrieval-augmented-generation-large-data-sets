@@ -4,8 +4,7 @@ In this project, we attempt to answer three questions:
 
 * Can the vector database in the RAG pattern scale to handle a large data set with tens of millions of documents?
 * Where are the bottlenecks in the ingest pipeline for RAG?
-* Which vector database is better in terms of cost or performance? We evaluated OpenSearch, RDS Postgres, Kendra, and Pinecone. (Kendra is not actually a vector database, but it can perform the semantic search function. It is interesting in that you don't need to produce embedding vectors with an LLM to use it.)
-
+* Which vector database is better in terms of cost or performance? We evaluated OpenSearch and RDS Postgres
 ## Design
 
 In order to answer these questions, we set up the data pipeline shown below.
