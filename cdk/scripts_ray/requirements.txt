@@ -1,0 +1,10 @@
+langchain
+ray[data]
+sentence-transformers
+tqdm
+torch
+transformers
+opensearch-py
+psycopg2-binary 
+pgvector
+pinecone-client

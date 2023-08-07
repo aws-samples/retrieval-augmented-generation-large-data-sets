@@ -1,0 +1,6 @@
+TODO
+data/
+rag-massive-data.code-workspace
+.DS_Store
+cdk.context.json
+rag-large-dataset.code-workspace
