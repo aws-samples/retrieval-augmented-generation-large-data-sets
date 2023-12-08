@@ -134,28 +134,12 @@ class Embed:
             bulk(self.client, requests)
             t2 = time.time()
             self.put_cloudwatch_metric((t2-t1) * 1000.0)
-            self.force_merge()
-            print(f"Refreshing the index.. {self.DOMAIN}")
-            self.client.indices.refresh(index=self.DOMAIN)
         except Exception as e:
             print(f"Error ingesting to OpenSearch: {e}")
 
         return r
 
-    # Do the force_merge to reduce the number of segments.
-    def force_merge(self):
-        i = 1
-        while i <= 20:
-            try:
-                print(f"Force Merge iteration {i}...")
-                i = i + 1
-                self.client.indices.forcemerge(index=self.DOMAIN, max_num_segments=1, request_timeout=20000)
-                # ensuring the force merge is completed
-                break
-            except Exception as e:
-                print("Waiting for Force Merge to complete")
-                time.sleep(300)
-                print(f"Running force again due to error..... {e}")
+    
 
 
 ds = ds.map_batches(
@@ -170,3 +154,27 @@ ds = ds.map_batches(
 )
 
 ds.count()
+
+
+#finally we want to optimize the OS index to reduce the number of segments.
+opensearch_client = OpenSearch(URL)
+
+# Do the force_merge to reduce the number of segments.
+def force_merge(os_client):
+    i = 1
+    while i <= 20:
+        try:
+            print(f"Force Merge iteration {i}...")
+            i = i + 1
+            os_client.indices.forcemerge(index=DOMAIN, max_num_segments=1, request_timeout=20000)
+            # ensuring the force merge is completed
+            break
+        except Exception as e:
+            print("Waiting for Force Merge to complete")
+            time.sleep(300)
+            print(f"Running force again due to error..... {e}")
+
+force_merge(opensearch_client)
+
+print(f"Refreshing the index.. {DOMAIN}")
+opensearch_client.indices.refresh(index=DOMAIN)

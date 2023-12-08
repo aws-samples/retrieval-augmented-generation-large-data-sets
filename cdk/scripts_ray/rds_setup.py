@@ -33,7 +33,7 @@ cur.execute("""CREATE TABLE IF NOT EXISTS products(
                descriptions_embeddings vector(768));""")
 
 cur.execute("""CREATE INDEX ON products 
-               USING ivfflat (descriptions_embeddings vector_l2_ops) WITH (lists = 500);""")
+               USING ivfflat (descriptions_embeddings vector_l2_ops) WITH (lists = 5000);""")
 cur.execute("VACUUM ANALYZE products;")
 
 cur.close()

@@ -10,9 +10,13 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as cw from 'aws-cdk-lib/aws-cloudwatch';
 import { S3Code } from 'aws-cdk-lib/aws-lambda';
 
+export interface RagStackProps extends cdk.StackProps {
+  includeRDS: boolean;
+  includeOpenSearch: boolean;
+}
 
 export class RAGStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: RagStackProps) {
     super(scope, id, props);
 
     //vpc
@@ -50,7 +54,8 @@ export class RAGStack extends cdk.Stack {
       executable: glue.JobExecutable.pythonEtl({
         glueVersion: glue.GlueVersion.V4_0,
         pythonVersion: glue.PythonVersion.THREE,
-        script: new glue.AssetCode('templates/spark-jsonl-parquet.py')}),
+        script: new glue.AssetCode('templates/spark-jsonl-parquet.py')
+      }),
       role: glueRole,
       workerType: glue.WorkerType.G_8X,
       workerCount: 50
@@ -64,37 +69,65 @@ export class RAGStack extends cdk.Stack {
     })
 
     //OpenSearch 
-    const ragOpenSearch = new OpenSearch(this, 'OpenSearch', { vpc: vpc, domainName: 'genai' })
+    if (props?.includeOpenSearch) {
 
-    ragOpenSearch.openSearchDomain.connections.allowFrom(jumpHost.instance, ec2.Port.allTraffic(), 'All traffic from jumphost to OpenSearch')
-    ragOpenSearch.openSearchDomain.connections.allowFrom(rayClusterSetup.raySecurityGroup, ec2.Port.allTraffic(), 'All traffic from ray to OpenSearch')
+      const ragOpenSearch = new OpenSearch(this, 'OpenSearch', { vpc: vpc, domainName: 'genai' })
 
-    ragOpenSearch.openSearchDomain.grantIndexReadWrite("*", rayClusterSetup.headNodeRole)
-    ragOpenSearch.openSearchDomain.grantIndexReadWrite("*", rayClusterSetup.workerNodeRole)
-    ragOpenSearch.openSearchDomain.grantIndexReadWrite("*", jumpHost.instance.role)
-    ragOpenSearch.openSearchDomain.grantPathReadWrite("*", rayClusterSetup.headNodeRole)
-    ragOpenSearch.openSearchDomain.grantPathReadWrite("*", rayClusterSetup.workerNodeRole)
-    ragOpenSearch.openSearchDomain.grantPathReadWrite("*", jumpHost.instance.role)
-    ragOpenSearch.openSearchDomain.grantReadWrite(rayClusterSetup.headNodeRole)
-    ragOpenSearch.openSearchDomain.grantReadWrite(rayClusterSetup.workerNodeRole)
-    ragOpenSearch.openSearchDomain.grantReadWrite(jumpHost.instance.role)
+      ragOpenSearch.openSearchDomain.connections.allowFrom(jumpHost.instance, ec2.Port.allTraffic(), 'All traffic from jumphost to OpenSearch')
+      ragOpenSearch.openSearchDomain.connections.allowFrom(rayClusterSetup.raySecurityGroup, ec2.Port.allTraffic(), 'All traffic from ray to OpenSearch')
 
-    //RDS Postgres Instance
-    const ragPostgres = new cdk.aws_rds.DatabaseInstance(this, 'RDSPostgres', {
-      engine: cdk.aws_rds.DatabaseInstanceEngine.postgres({ version: cdk.aws_rds.PostgresEngineVersion.VER_15_2 }),
-      vpc: vpc,
-      instanceType: ec2.InstanceType.of(ec2.InstanceClass.M5D, ec2.InstanceSize.XLARGE24),
-      allocatedStorage: 20000,
-      multiAz: true,
-      storageEncrypted: true,
-      enablePerformanceInsights: true,
-      performanceInsightRetention: 7,
+      ragOpenSearch.openSearchDomain.grantIndexReadWrite("*", rayClusterSetup.headNodeRole)
+      ragOpenSearch.openSearchDomain.grantIndexReadWrite("*", rayClusterSetup.workerNodeRole)
+      ragOpenSearch.openSearchDomain.grantIndexReadWrite("*", jumpHost.instance.role)
+      ragOpenSearch.openSearchDomain.grantPathReadWrite("*", rayClusterSetup.headNodeRole)
+      ragOpenSearch.openSearchDomain.grantPathReadWrite("*", rayClusterSetup.workerNodeRole)
+      ragOpenSearch.openSearchDomain.grantPathReadWrite("*", jumpHost.instance.role)
+      ragOpenSearch.openSearchDomain.grantReadWrite(rayClusterSetup.headNodeRole)
+      ragOpenSearch.openSearchDomain.grantReadWrite(rayClusterSetup.workerNodeRole)
+      ragOpenSearch.openSearchDomain.grantReadWrite(jumpHost.instance.role)
 
-    })
+      new cdk.CfnOutput(this, 'opensearchUrl', {
+        description: "Access OpenSearch via this URL.",
+        value: "https://" + ragOpenSearch.openSearchDomain.domainEndpoint,
+        exportName: 'opensearchUrl'
+      });
 
-    //grant jumphost and ray clusters access to postgres
-    ragPostgres.connections.allowDefaultPortFrom(jumpHost.instance)
-    ragPostgres.connections.allowDefaultPortFrom(rayClusterSetup.raySecurityGroup)
+    }
+
+    if (props?.includeRDS) {
+      //RDS Postgres Instance
+      const ragPostgres = new cdk.aws_rds.DatabaseInstance(this, 'RDSPostgres', {
+        engine: cdk.aws_rds.DatabaseInstanceEngine.postgres({ version: cdk.aws_rds.PostgresEngineVersion.VER_15_2 }),
+        vpc: vpc,
+        instanceType: ec2.InstanceType.of(ec2.InstanceClass.R7G, ec2.InstanceSize.XLARGE12),
+        allocatedStorage: 20000,
+        multiAz: true,
+        storageEncrypted: true,
+        enablePerformanceInsights: true,
+        performanceInsightRetention: 7,
+
+      })
+
+      //grant jumphost and ray clusters access to postgres
+      ragPostgres.connections.allowDefaultPortFrom(jumpHost.instance)
+      ragPostgres.connections.allowDefaultPortFrom(rayClusterSetup.raySecurityGroup)
+
+      new cdk.CfnOutput(this, 'rdsEndpoint', {
+        value: ragPostgres.dbInstanceEndpointAddress,
+        description: "RDS Endpoint",
+        exportName: 'rdsEndpoint'
+      })
+  
+      var rdsSecretARN = 'undefined'
+      if (ragPostgres.secret) {
+        rdsSecretARN = ragPostgres.secret?.secretArn
+      }
+      new cdk.CfnOutput(this, 'rdsSecretARN', {
+        value: rdsSecretARN,
+        description: "Secret ARN for RDS",
+        exportName: 'rdsSecretARN'
+      })
+    }
 
     // Cloudwatch dashboard
     const dashboard = new cw.Dashboard(this, 'Dashboard', {
@@ -207,7 +240,7 @@ export class RAGStack extends cdk.Stack {
         }
       })],
     }));
-   
+
 
     //CDK Outputs
     new cdk.CfnOutput(this, 'bucketName', {
@@ -215,28 +248,5 @@ export class RAGStack extends cdk.Stack {
       description: "S3 Bucket for files",
       exportName: 'bucketName'
     })
-
-    new cdk.CfnOutput(this, 'rdsEndpoint', {
-      value: ragPostgres.dbInstanceEndpointAddress,
-      description: "RDS Endpoint",
-      exportName: 'rdsEndpoint'
-    })
-
-    var rdsSecretARN = 'undefined'
-    if (ragPostgres.secret) {
-      rdsSecretARN = ragPostgres.secret?.secretArn
-    }
-    new cdk.CfnOutput(this, 'rdsSecretARN', {
-      value: rdsSecretARN,
-      description: "Secret ARN for RDS",
-      exportName: 'rdsSecretARN'
-    })
-
-    new cdk.CfnOutput(this, 'opensearchUrl', {
-      description: "Access OpenSearch via this URL.",
-      value: "https://" + ragOpenSearch.openSearchDomain.domainEndpoint,
-      exportName: 'opensearchUrl'
-    });
-
   }
 }

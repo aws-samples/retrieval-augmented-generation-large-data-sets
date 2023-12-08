@@ -25,7 +25,8 @@ setup_commands:
     - >-
         (stat \$HOME/anaconda3/envs/tensorflow2_p38/ &> /dev/null &&
         echo 'export PATH="\$HOME/anaconda3/envs/tensorflow2_p38/bin:\$PATH"' >> ~/.bashrc) || true
-    - which ray || pip install -U "ray[default]"
+    - which ray || pip install -U "ray[default]==2.5.1"
+    - pip install "pydantic<2"
 
 available_node_types:
   ray.head.default:

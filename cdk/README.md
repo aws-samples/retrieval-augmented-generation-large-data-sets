@@ -2,6 +2,12 @@
 
 ## Set up infrastructure
 
+Pre-requsities: 
+
+Clone the repo or download the zip file for the rag stack.
+
+Before proceeding with the installation, under cdk->bin-> src.tc, change the boolean values for Amazon RDS and Amazon OpenSearch to etiher true or false depending on your preference. Save and then proceed to CDK deployment below.
+
 Start by deploying the CDK stack.
 
 If you have not created an OpenSearch domain before, create a service-linked role as documented [here](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_opensearchservice-readme.html#a-note-about-slr). You can also run the below command to create the role.
@@ -18,12 +24,19 @@ cdk deploy
 
 This CDK stack will deploy the following infrastructure.
 
-- JumpHost
-- OpenSearch Cluster
-- RDS Instance
-- SSM Doc for deploying Ray Cluster
+- Amazon VPC
+- JumpHost (inside the VPC)
+- Amazon OpenSearch Cluster (if Amazon Opensearch was selected "true")
+- Amazon RDS Instance (if Amazon RDS was selected "true")
+- Amazon SSM Doc for deploying Ray Cluster
+- Amazon S3 bucket
+- Amazon Glue job for converting OSCAR dataset jsonl files to parquet
+- Amazon CloudWatch Dashboard
+
 
 ## Download the data
+
+The OSCAR dataset is around 4.5TB of data and this step takes about a day to download files depending on network bandwidth.
 
 Run these from the jump host
 
@@ -36,15 +49,32 @@ aws configure set region $AWS_REGION
 
 bucket_name=$(aws cloudformation describe-stacks --stack-name "$stack_name" --query "Stacks[0].Outputs[?OutputKey=='bucketName'].OutputValue" --output text )
 
+```
+Before cloning the git repo, please make sure you have hugging face profile and access to the OSCAR data corpus. You will need to use the username and password for cloning the OSCAR data below
+
+``` bash
+
 GIT_LFS_SKIP_SMUDGE=1 git clone https://huggingface.co/datasets/oscar-corpus/OSCAR-2301
 cd OSCAR-2301
 git lfs pull --include en_meta
+
+# The above step will download the data on Jumphost and will take around 2 hours to complete. 
+# After the donwload is completed, run the following steps to extract jsonl files.
+
 cd en_meta
 for F in `ls *.zst`; do zstd -d $F; done
 rm *.zst
 cd ..
 aws s3 sync en_meta s3://$bucket_name/oscar/jsonl/
+
 ```
+## Convert jsonl files to Parquet
+
+
+A ```Glue ETL``` job ```oscar-jsonl-parquet``` is created that could be used to convert the oscar data from jsonl to parquet format. 
+
+```Run``` the glue job ```oscar-jsonl-parquet```. The files in parquet format should be available under the ```parquet``` folder in the s3 bucket.  
+
 
 ## Download the questions
 
@@ -164,7 +194,7 @@ python query_rds.py
 
 ## Setting up Ray Dashboard
 
-```Pre-requisites```: Install the AWS CLI on your local machine. Refer to this link for installation https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+```Pre-requisites```: Install the AWS CLI on your local machine. Make sure your selected aws region is the one in which the ray setup is done.  Refer to this link for installation https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
 
 Step 1: Install the Session Manager plugin for the AWS CLI. Follow this link https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html
 
@@ -196,8 +226,8 @@ You will see a message like this
 ```
 Starting session to i-021821beb88661ba3 to forward to port 8265 using local port 8265
 
-Starting session with SessionId: richagpt-Isengard-0d73d992dfb16b146
-Port 8265 opened for sessionId richagpt-Isengard-0d73d992dfb16b146.
+Starting session with SessionId: *****-Isengard-******
+Port 8265 opened for sessionId *****-Isengard-******.
 Waiting for connections...
 
 ```
